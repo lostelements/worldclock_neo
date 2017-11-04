@@ -1,5 +1,5 @@
-#include <DS1302.h> //RTC Library
-#include <Shifter.h> //74 Shift library
+
+
 
 
 
@@ -17,8 +17,40 @@
  *              shifter.write()*
  *              shifter.setPin(1, HIGH) or LOW*
  *                                                                         *
+ *                                                                         
+ *   To Do, modify  to use fastled and remove shifter                                                                      
+ *   modify for use on esp8266
+ *   include wifimanager with parameters
+ *   set up for mqtt listnen to allow clock to be set
+ *   set up for mqtt to change pallets seasonally
+ *   add dallas one wire temperature
+ *   mqtt temperature
+ *   set display to show temperature using words on button press
+ *   
  ***************************************************************************
  */
+
+#define FASTLED_ESP8266_RAW_PIN_ORDER
+#include "FastLED.h"
+FASTLED_USING_NAMESPACE
+
+//extern "C" {
+//#include "user_interface.h"  -- dont know what this is
+//}
+#include <DS1302.h> //RTC Library
+//#include <Shifter.h> //74 Shift library  - not required anymore
+#include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <OneWire.h>
+#include <DallasTemperature.h> //on LostElements Git
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
+#include <FS.h>
+#include <EEPROM.h>
+#include "GradientPalettes.h"
+#include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
+#include <PubSubClient.h> //on Lostelemnts Git
 
 // Define all the constants
 
