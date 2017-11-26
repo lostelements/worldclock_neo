@@ -1,9 +1,3 @@
-
-
-
-
-
-
 /**************************************************************************
  *                                                                         *
  *  The British W O R D C L O C K   -                                      *
@@ -37,11 +31,12 @@ FASTLED_USING_NAMESPACE
 //extern "C" {
 //#include "user_interface.h"  -- dont know what this is
 //}
-#include <DS1302.h> //RTC Library
+//#include <DS1302.h> //RTC Library
 //#include <Shifter.h> //74 Shift library  - not required anymore
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
-#include <OneWire.h>
+#include <BME680_Library.h>
+#include <Wire.h>
 //#include <DallasTemperature.h> //on LostElements Git
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
@@ -55,6 +50,7 @@ FASTLED_USING_NAMESPACE
 // Define all the constants
 //define set name of yor bot
 String botname = "neoclock";
+String thistemp = "";
 char sign_name[10]; //name no spaces or special charcters
 char mqtt_port[6] = "8080";
 char mqtt_server[40];
@@ -62,8 +58,10 @@ char mqtt_server[40];
 bool shouldSaveConfig = false;
 std::unique_ptr<ESP8266WebServer> server;
 
-#define ONE_WIRE_BUS            D4      // DS18B20 pin
+//#define ONE_WIRE_BUS            D4      // DS18B20 pin
 #define DATA_PIN      D5     // Leds pin
+#define mysda   D0 // SDA
+#define myscl   D2 //SCL
 #define LED_TYPE      WS2812B
 #define COLOR_ORDER   GRB
 // Set your number of leds here!
@@ -104,7 +102,7 @@ uint8_t speed = 30;
 uint8_t gCurrentPaletteNumber = 0;
 
 CRGBPalette16 gCurrentPalette( CRGB::Black);
-CRGBPalette16 gTargetPalette( gGradientPalettes[0] );
+//CRGBPalette16 gTargetPalette( gGradientPalettes[0] );
 CRGBPalette16 IceColors_p = CRGBPalette16(CRGB::Black, CRGB::Blue, CRGB::Aqua, CRGB::White);
 uint8_t currentPatternIndex = 0; // Index number of which pattern is current
 uint8_t autoplay = 0;
@@ -134,6 +132,15 @@ typedef PatternAndName PatternAndNameList[];
 
 uint8_t power = 1;
 uint8_t glitter = 0;
+
+BME680_Library bme680;
+WiFiClient wclient;
+PubSubClient client(wclient, mqtt_server);
+
+char temperatureString[6];
+const unsigned long fiveMinutes = 5 * 60 * 1000UL;
+static unsigned long lastSampleTime = 0 - fiveMinutes; // initialize such that a reading is due the first time through loop()
+int buttonState = 0;
 // To HERE?
 
 
@@ -196,7 +203,7 @@ int NINE[2] ={38,39};
 int FOUR[2] ={34,35};
 //const int AFTERNOON = 10;
 int AFTERNOON[2] ={54,55};
-int INTHE[2] = [49,50];
+int INTHE[2] = {49,50};
 
 
 int  hour=3, minute=38, second=00;
@@ -213,8 +220,8 @@ int  BTNActive = 1;    // the sense of the button inputs (Changes based on hardw
 
 
 // buttons
-int FWDButtonPin=5;
-int REVButtonPin=7;
+//int FWDButtonPin=5;
+//int REVButtonPin=7;
 
 // 1302 RTC Constants
 // Change these to use the 680
@@ -242,22 +249,26 @@ void saveConfigCallback () {
 // Add in the 680 
 //DS1302 rtc(DS1302CEPin, DS1302IOPin, DS1302CLKPin);
 
-void print_DS1302time()
-{
-  /* Get the current time and date from the chip */
+//void print_DS1302time()
+//{
+//  /* Get the current time and date from the chip */
   //change to get nist time 
   //Time t = rtc.time();
 
   /* Format the time and date and insert into the temporary buffer */
-  snprintf(buf, sizeof(buf), "DS1302 time: %02d:%02d:%02d",
-  t.hr, t.min, t.sec);
+//  snprintf(buf, sizeof(buf), "DS1302 time: %02d:%02d:%02d",
+//  t.hr, t.min, t.sec);
 
   /* Print the formatted string to serial so we can see the time */
-  Serial.println(buf);
+//  Serial.println(buf);
 
+//}
+
+void SWversion(void) {
+  delay(2000);
+  Serial.println("British Word Clock copyright 2014 BattleVA");
+  
 }
-
-
 
 void setup()
 {
@@ -266,14 +277,14 @@ void setup()
  // pinMode(SER_Pin, OUTPUT); 
  // pinMode(RCLK_Pin, OUTPUT); 
  // pinMode(SRCLK_Pin, OUTPUT); 
-  pinMode(FWDButtonPin, INPUT); 
-  pinMode(REVButtonPin, INPUT); 
+ // pinMode(FWDButtonPin, INPUT); 
+ // pinMode(REVButtonPin, INPUT); 
 
   //  setup 1302
   // change to bm680 pins
-  pinMode(DS1302IOPin, OUTPUT); 
-  pinMode(DS1302CEPin, OUTPUT); 
-  pinMode(DS1302CLKPin, OUTPUT); 
+  //pinMode(DS1302IOPin, OUTPUT); 
+  //pinMode(DS1302CEPin, OUTPUT); 
+  //pinMode(DS1302CLKPin, OUTPUT); 
 
   
 
@@ -291,7 +302,7 @@ void setup()
   FastLED.show();
 
   EEPROM.begin(512);
-  loadSettings();
+  //loadSettings();
 
   FastLED.setBrightness(brightness);
 
@@ -403,13 +414,60 @@ void setup()
    MDNS.begin(sign_name);
    MDNS.addService("http", "tcp", 80);
     Serial.println("mdns started");
-WiFiClient wclient;
+//WiFiClient wclient;
 PubSubClient client(wclient, mqtt_server);
 
 //define set name of your sign
 //String signname = "Room1"; //should be loaded from spiffs
 //define mqtt message names
 String thistemp = "ledclock\\" + String(sign_name);//signname;
+ Wire.begin(mysda,myscl);
+
+  Serial.print("BME Initialization...");
+  if(bme680.begin()){
+     Serial.print("Succeeded!");
+  }
+  else {
+    Serial.print("Failed!");
+    for(;;); // spin forever
+  }
+  Serial.println();
+
+  Serial.print("Configuring Forced Mode...");
+  if(bme680.configureForcedMode()){
+     Serial.print("Succeeded!");
+  }
+  else {
+    Serial.print("Failed!");
+    for(;;); // spin forever
+  }
+  Serial.println();
+
+  Serial.println(F("Temperature(degC),Relative_Humidity(%),Pressure(hPa),Gas_Resistance(Ohms)"));
+ msTick=millis();      // Initialise the msTick counter
+
+  selftest();  // validate the hardware for the user
+
+  selftestmode=0;
+
+// change this to get nist time is connected to the internet
+  //if (DS1302Present==1) {
+    // Get the current time and date from the chip 
+    //Time t = rtc.time();
+    //second=t.sec;     
+    //minute=t.min;
+    //hour=t.hr; 
+  //}
+
+  displaytime();        // display the current time
+
+
+
+
+
+
+}
+
 
 /* Only needed if listening mqtt
 void callback(const MQTT::Publish& pub) {
@@ -468,14 +526,28 @@ void sendtemp(){
   // function to send the temperature every five minutes rather than leavingb in the loop
    if (now - lastSampleTime >= fiveMinutes)
   {
-     float temperature = getTemperature();
+    bme680.configureForcedMode(); // otherwise you get BME680_W_NO_NEW_DATA warning code?
+  if(bme680.read()){
+    Serial.print(bme680.getTemperature(), 2);
+    Serial.print(F(","));
+    Serial.print(bme680.getRelativeHumidity(), 2);
+    Serial.print(F(","));
+    Serial.print(bme680.getBarometricPressure(), 2);
+    Serial.print(F(","));
+    Serial.print(bme680.getGasResistance());
+    Serial.println();
+  }
+  else{
+    Serial.println("BME680 Read Failed!");
+  }
+     float temperature = bme680.getTemperature();
   // convert temperature to a string with two digits before the comma and 2 digits for precision
   dtostrf(temperature, 2, 2, temperatureString);
   // send temperature to the serial console
   Serial.println ("Sending temperature: ");
   Serial.println (temperatureString);
   // send temperature to the MQTT topic every 5 minutes
-     client.publish(roomtemp, temperatureString);
+     client.publish(thistemp, temperatureString);
   //lastSampleTime = now + fiveMinutes;
   lastSampleTime += fiveMinutes;
    // add code to take scroll temperatre 4 times then reset face to static  (temperature is 5 characters * 8  for each scroll
@@ -549,55 +621,31 @@ void settempleds( int b[], int sizeOfArray ){
   // new hardware uses internal pullups, and uses the buttons
   // to pull the inputs down.
 
-  digitalWrite(FWDButtonPin, sizeof());  // Turn on weak pullups
-  digitalWrite(REVButtonPin, sizeof());  // Turn on weak pullups
+ // digitalWrite(FWDButtonPin, HIGH);  // Turn on weak pullups
+ // digitalWrite(REVButtonPin, HIGH);  // Turn on weak pullups
 
-  OldHardware=0;
-  if ( digitalRead(FWDButtonPin)==0 && digitalRead(REVButtonPin)==0)
-  {
-    Serial.println("Detected Old Hardware");
-    OldHardware=1;  // we have old hardware
-    BTNActive = 1; // True = active for old hardware
-    digitalWrite(FWDButtonPin,LOW);  // Turn off weak pullups
-    digitalWrite(REVButtonPin,LOW);  // Turn off weak pullups
+ // OldHardware=0;
+ // if ( digitalRead(FWDButtonPin)==0 && digitalRead(REVButtonPin)==0)
+ // {
+ //   Serial.println("Detected Old Hardware");
+ //   OldHardware=1;  // we have old hardware
+ //   BTNActive = 1; // True = active for old hardware
+ //   digitalWrite(FWDButtonPin,LOW);  // Turn off weak pullups
+ //   digitalWrite(REVButtonPin,LOW);  // Turn off weak pullups
 
-  }
-  else
-  {
-    Serial.println("Detected New Hardware");
-    OldHardware=0;  // we have old hardware
-    BTNActive = 0; // True = active for old hardware
-  }
+  //}
+  //else
+  //{
+    //Serial.println("Detected New Hardware");
+    //OldHardware=0;  // we have old hardware
+    //BTNActive = 0; // True = active for old hardware
+  //}
 
 
  
 
 
-  msTick=millis();      // Initialise the msTick counter
-
-  selftest();  // validate the hardware for the user
-
-  selftestmode=0;
-
-// change this to get nist time is connected to the internet
-  if (DS1302Present==1) {
-    // Get the current time and date from the chip 
-    Time t = rtc.time();
-    second=t.sec;     
-    minute=t.min;
-    hour=t.hr; 
-  }
-
-  displaytime();        // display the current time
-
-
-
-
-
-
-}
-
-
+ 
 
 
 
@@ -724,57 +772,57 @@ void displaytime(void){
 
   // now we display the appropriate minute counter
   if ((minute>4) && (minute<10)) { 
-    settimeleds(MFIVE, sizeof());
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(MFIVE, sizeof(MFIVE));
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Five Minutes ");
   } 
   if ((minute>9) && (minute<15)) { 
-    settimeleds(MTEN, sizeof()); 
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(MTEN, sizeof(MTEN)); 
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Ten Minutes ");
   }
   if ((minute>14) && (minute<20)) {
-    settimeleds(QUARTER, sizeof()); 
+    settimeleds(QUARTER, sizeof(QUARTER)); 
     Serial.print("Quarter ");
   }
   if ((minute>19) && (minute<25)) { 
-    settimeleds(TWENTY, sizeof()); 
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(TWENTY, sizeof(TWENTY)); 
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Twenty Minutes ");
   }
   if ((minute>24) && (minute<30)) { 
-    settimeleds(TWENTY, sizeof()); 
-    settimeleds(MFIVE, sizeof()); 
-    settimeleds(MINUTES, sizeof());
+    settimeleds(TWENTY, sizeof(TWENTY)); 
+    settimeleds(MFIVE, sizeof(MFIVE)); 
+    settimeleds(MINUTES, sizeof(MINUTES));
     Serial.print("Twenty Five Minutes ");
   }  
   if ((minute>29) && (minute<35)) {
-    settimeleds(HALF, sizeof());
+    settimeleds(HALF, sizeof(HALF));
     Serial.print("Half ");
   }
   if ((minute>34) && (minute<40)) { 
-    settimeleds(TWENTY, sizeof()); 
-    settimeleds(MFIVE, sizeof()); 
-    settimeleds(MINUTES, sizeof());
+    settimeleds(TWENTY, sizeof(TWENTY)); 
+    settimeleds(MFIVE, sizeof(MFIVE)); 
+    settimeleds(MINUTES, sizeof(MINUTES));
     Serial.print("Twenty Five Minutes ");
   }  
   if ((minute>39) && (minute<45)) { 
-    settimeleds(TWENTY, sizeof()); 
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(TWENTY, sizeof(TWENTY)); 
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Twenty Minutes ");
   }
   if ((minute>44) && (minute<50)) {
-    settimeleds(QUARTER, sizeof()); 
+    settimeleds(QUARTER, sizeof(QUARTER)); 
     Serial.print("Quarter ");
   }
   if ((minute>49) && (minute<55)) { 
-    settimeleds(MTEN, sizeof()); 
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(MTEN, sizeof(MTEN)); 
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Ten Minutes ");
   } 
   if (minute>54) { 
-    settimeleds(MFIVE, sizeof()); 
-    settimeleds(MINUTES, sizeof()); 
+    settimeleds(MFIVE, sizeof(MFIVE)); 
+    settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Five Minutes ");
   }
 
@@ -785,132 +833,132 @@ void displaytime(void){
     switch (hour) {
     case 1:
     case 13: 
-      settimeleds(ONE, sizeof()); 
+      settimeleds(ONE, sizeof(ONE)); 
       Serial.print("One ");
       break;
     case 2:
     case 14: 
-      settimeleds(TWO, sizeof()); 
+      settimeleds(TWO, sizeof(TWO)); 
       Serial.print("Two ");
       break;
     case 3: 
     case 15:
-      settimeleds(THREE, sizeof()); 
+      settimeleds(THREE, sizeof(THREE)); 
       Serial.print("Three ");
       break;
     case 4: 
     case 16:
-      settimeleds(FOUR, sizeof()); 
+      settimeleds(FOUR, sizeof(FOUR)); 
       Serial.print("Four ");
       break;
     case 5: 
     case 17:
-      settimeleds(FIVE, sizeof()); 
+      settimeleds(FIVE, sizeof(FIVE)); 
       Serial.print("Five ");
       break;
     case 6: 
     case 18:
-      settimeleds(SIX, sizeof()); 
+      settimeleds(SIX, sizeof(SIX)); 
       Serial.print("Six ");
       break;
     case 7: 
     case 19:
-      settimeleds(SEVEN, sizeof()); 
+      settimeleds(SEVEN, sizeof(SEVEN)); 
       Serial.print("Seven ");
       break;
     case 8: 
     case 20:
-      settimeleds(EIGHT, sizeof()); 
+      settimeleds(EIGHT, sizeof(EIGHT)); 
       Serial.print("Eight ");
       break;
     case 9: 
     case 21:
-      settimeleds(NINE, sizeof()); 
+      settimeleds(NINE, sizeof(NINE)); 
       Serial.print("Nine ");
       break;
     case 10:
     case 22: 
-      settimeleds(TEN, sizeof()); 
+      settimeleds(TEN, sizeof(TEN)); 
       Serial.print("Ten ");
       break;
     case 11:
     case 23: 
-      settimeleds(ELEVEN, sizeof()); 
+      settimeleds(ELEVEN, sizeof(ELEVEN)); 
       Serial.print("Eleven ");
       break;
     case 0:
     case 12: 
-      settimeleds(TWELVE, sizeof()); 
+      settimeleds(TWELVE, sizeof(TWELVE)); 
       Serial.print("Twelve ");
       break;
     }
-    settimeleds(OCLOCK, sizeof());
+    settimeleds(OCLOCK, sizeof(OCLOCK));
     Serial.println("O'Clock");
   }
   else
     if ((minute < 35) && (minute >4))
     {
-      settimeleds(PAST, sizeof());
+      settimeleds(PAST, sizeof(PAST));
       Serial.print("Past ");
       switch (hour) {
       case 1:
       case 13: 
-        settimeleds(ONE, sizeof()); 
+        settimeleds(ONE, sizeof(ONE)); 
         Serial.println("One ");
         break;
       case 2: 
       case 14:
-        settimeleds(TWO, sizeof()); 
+        settimeleds(TWO, sizeof(TWO)); 
         Serial.println("Two ");
         break;
       case 3: 
       case 15:
-        settimeleds(THREE, sizeof()); 
+        settimeleds(THREE, sizeof(THREE)); 
         Serial.println("Three ");
         break;
       case 4: 
       case 16:
-        settimeleds(FOUR, sizeof()); 
+        settimeleds(FOUR, sizeof(FOUR)); 
         Serial.println("Four ");
         break;
       case 5: 
       case 17:
-        settimeleds(FIVE, sizeof()); 
+        settimeleds(FIVE, sizeof(FIVE)); 
         Serial.println("Five ");
         break;
       case 6: 
       case 18:
-        settimeleds(SIX, sizeof()); 
+        settimeleds(SIX, sizeof(SIX)); 
         Serial.println("Six ");
         break;
       case 7: 
       case 19:
-        settimeleds(SEVEN, sizeof()); 
+        settimeleds(SEVEN, sizeof(SEVEN)); 
         Serial.println("Seven ");
         break;
       case 8: 
       case 20:
-        settimeleds(EIGHT, sizeof()); 
+        settimeleds(EIGHT, sizeof(EIGHT)); 
         Serial.println("Eight ");
         break;
       case 9: 
       case 21:
-        settimeleds(NINE, sizeof()); 
+        settimeleds(NINE, sizeof(NINE)); 
         Serial.println("Nine ");
         break;
       case 10:
       case 22: 
-        settimeleds(TEN, sizeof()); 
+        settimeleds(TEN, sizeof(TEN)); 
         Serial.println("Ten ");
         break;
       case 11:
       case 23: 
-        settimeleds(ELEVEN, sizeof()); 
+        settimeleds(ELEVEN, sizeof(ELEVEN)); 
         Serial.println("Eleven ");
         break;
       case 0:
       case 12: 
-        settimeleds(TWELVE, sizeof()); 
+        settimeleds(TWELVE, sizeof(TWELVE)); 
         Serial.println("Twelve ");
         break;
       }
@@ -919,67 +967,67 @@ void displaytime(void){
     {
       // if we are greater than 34 minutes past the hour then display
       // the next hour, as we will be displaying a 'to' sign
-      settimeleds(TO, sizeof());
+      settimeleds(TO, sizeof(TO));
       Serial.print("To ");
       switch (hour) {
       case 1: 
       case 13:
-        settimeleds(TWO, sizeof()); 
+        settimeleds(TWO, sizeof(TWO)); 
         Serial.println("Two ");
         break;
       case 14:
       case 2: 
-        settimeleds(THREE, sizeof()); 
+        settimeleds(THREE, sizeof(THREE)); 
         Serial.println("Three ");
         break;
       case 15:
       case 3: 
-        settimeleds(FOUR, sizeof()); 
+        settimeleds(FOUR, sizeof(FOUR)); 
         Serial.println("Four ");
         break;
       case 4: 
       case 16:
-        settimeleds(FIVE, sizeof()); 
+        settimeleds(FIVE, sizeof(FIVE)); 
         Serial.println("Five ");
         break;
       case 5: 
       case 17:
-        settimeleds(SIX, sizeof()); 
+        settimeleds(SIX, sizeof(SIX)); 
         Serial.println("Six ");
         break;
       case 6: 
       case 18:
-        settimeleds(SEVEN, sizeof()); 
+        settimeleds(SEVEN, sizeof(SEVEN)); 
         Serial.println("Seven ");
         break;
       case 7: 
       case 19:
-        settimeleds(EIGHT, sizeof()); 
+        settimeleds(EIGHT, sizeof(EIGHT)); 
         Serial.println("Eight ");
         break;
       case 8: 
       case 20:
-        settimeleds(NINE, sizeof()); 
+        settimeleds(NINE, sizeof(NINE)); 
         Serial.println("Nine ");
         break;
       case 9: 
       case 21:
-        settimeleds(TEN, sizeof()); 
+        settimeleds(TEN, sizeof(TEN)); 
         Serial.println("Ten ");
         break;
       case 10: 
       case 22:
-        settimeleds(ELEVEN, sizeof()); 
+        settimeleds(ELEVEN, sizeof(ELEVEN)); 
         Serial.println("Eleven ");
         break;
       case 11: 
       case 23:
-        settimeleds(TWELVE, sizeof()); 
+        settimeleds(TWELVE, sizeof(TWELVE)); 
         Serial.println("Twelve ");
         break;
       case 0:
       case 12: 
-        settimeleds(ONE, sizeof()); 
+        settimeleds(ONE, sizeof(ONE)); 
         Serial.println("One ");
         break;
       }
@@ -987,12 +1035,12 @@ void displaytime(void){
 
 // Now set the AM or PM
  if (hour >= 12 && hour <= 23){
-     settimeleds(AFTERNOON, sizeof());
+     settimeleds(AFTERNOON, sizeof(AFTERNOON));
      Serial.println("afternoon");
      Serial.println(hour);
  } 
  else{
-   settimeleds(MORNING, sizeof());
+   settimeleds(MORNING, sizeof(MORNING));
    Serial.println("morning");
  }
 
@@ -1015,9 +1063,9 @@ void incrementtime(void){
     }
   }
   // debug outputs
-  Serial.println();
-  if (DS1302Present==1) print_DS1302time(); 
-  else Serial.print("Arduino Time: " );
+  Serial.println("increment time");
+  //if (DS1302Present==1) print_DS1302time(); 
+  //else Serial.print("Arduino Time: " );
   Serial.print(hour);
   Serial.print(":");
   Serial.print(minute);
@@ -1027,18 +1075,14 @@ void incrementtime(void){
 }
 
 
-void SWversion(void) {
-  delay(2000);
-  Serial.println("British Word Clock copyright 2014 BattleVA");
-  
-}
+
 
 
 void loop(void)
 {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // put your main code here, to run repeatedly:
-   client.set_callback(callback);
+   //client.set_callback(callback);
    if (!client.connected()) {
     reconnect();
   }
@@ -1061,13 +1105,13 @@ void loop(void)
     msTick=millis();
     second++;
     // Flash the onboard Pin13 Led so we know something is hapening!
-    digitalWrite(13, sizeof());
-    delay(50);
-    digitalWrite(13,LOW);  
-    delay(50);
-    digitalWrite(13, sizeof());
-    delay(50);
-    digitalWrite(13,LOW);  
+   // digitalWrite(13, sizeof());
+   // delay(50);
+    //digitalWrite(13,LOW);  
+    //delay(50);
+    //digitalWrite(13, sizeof());
+    //delay(50);
+    //digitalWrite(13,LOW);  
 
    // Serial.print(second);
   //  Serial.print("..");
@@ -1083,13 +1127,13 @@ void loop(void)
     displaytime();
   }
 // change to test nist time once per day
-  if (DS1302Present==1) {
+//  if (DS1302Present==1) {
     // Get the current time and date from the chip 
-    Time t = rtc.time();
-    second=t.sec;     
-    minute=t.min;
-    hour=t.hr; 
-  }
+//    Time t = rtc.time();
+//    second=t.sec;     
+//    minute=t.min;
+//    hour=t.hr; 
+//  }
 
  
   
@@ -1097,13 +1141,14 @@ void loop(void)
   // test to see if both buttons are being held down
   // if so  - start a self test till both buttons are held
   // down again.
+  /*
   if ( digitalRead(FWDButtonPin)==BTNActive && digitalRead(REVButtonPin)==BTNActive)
   {
     selftestmode = !selftestmode;
     if (selftestmode) Serial.println("Selftest Mode TRUE");
     else Serial.println("Selftest mode FALSE");
   }
-
+*/
   //    if (selftestmode) { 
   //      for(int i=0; i<100; i++)
   //      {
@@ -1120,7 +1165,7 @@ void loop(void)
 
   // test to see if a forward button is being held down
   // for time setting
-  if (digitalRead(FWDButtonPin) ==BTNActive ) 
+ /* if (digitalRead(FWDButtonPin) ==BTNActive ) 
     // the forward button is down
     // and it has been more than one second since we
     // last looked
@@ -1131,18 +1176,19 @@ void loop(void)
     incrementtime();
     second++;  // Increment the second counter to ensure that the name
     // flash doesnt happen when setting time
-    if (DS1302Present==1) {
+    //if (DS1302Present==1) {
       // Make a new time object to set the date and time 
-      Time t(2010, 04, 28, hour, minute, second, 01);
+      //Time t(2010, 04, 28, hour, minute, second, 01);
       // Set the time and date on the chip 
-      rtc.time(t);
-    } 
+      //rtc.time(t);
+    //} 
     delay(100);
     displaytime();
-  }
+  }*/
 
   // test to see if the back button is being held down
   // for time setting
+/*  
   if (digitalRead(REVButtonPin)==BTNActive ) 
   {
 
@@ -1168,7 +1214,7 @@ void loop(void)
 
     displaytime();
     delay(100);
-  }
+  }*/
 
 }		  
 
