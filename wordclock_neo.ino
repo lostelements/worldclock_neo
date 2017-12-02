@@ -224,7 +224,7 @@ unsigned long sendNTPpacket(IPAddress& address)
     udp.endPacket();
 }
 
-void displayDate(unsigned long unixtime)
+void updateDate(void)
 {
  //get the date stuff first   
     int cb = 0;
@@ -263,21 +263,31 @@ void displayDate(unsigned long unixtime)
     unsigned long epoch = secsSince1900 - seventyYears;
     // handle british summer time
     time_t nowntp = epoch;
+    setTime(epoch);
     int myhour;
     if (isBST(year(nowntp), month(nowntp), day(nowntp), hour(nowntp)))
     {
-        myhour = ((unixtime % 86400L) / 3600) + 1; // bst
-    }
-    else
-    {
-        myhour = (unixtime % 86400L) / 3600; // utc
-    }
-
-    // Alter below to upte the time in the system
-   
-  
+       // myhour = ((unixtime % 86400L) / 3600) + 1; // bst
+        adjustTime(3600);
     }
     
+
+    // Alter below to upte the time in the system
+  
+  
+    }
+   // digital clock display of the time
+
+  Serial.print(hour());
+  Serial.print(minute());
+  Serial.print(second());
+  Serial.print(" ");
+  Serial.print(day());
+  Serial.print(".");
+  Serial.print(month());
+  Serial.print(".");
+  Serial.print(year());
+  Serial.println();  
     
 }
 char temperatureString[6];
@@ -366,11 +376,7 @@ int  BTNActive = 1;    // the sense of the button inputs (Changes based on hardw
 //int FWDButtonPin=5;
 //int REVButtonPin=7;
 
-// 1302 RTC Constants
-// Change these to use the 680
-int DS1302IOPin=10;
-int DS1302CEPin=8;
-int DS1302CLKPin=9;
+
 
 
 
@@ -388,24 +394,7 @@ void saveConfigCallback () {
 //initaize shifter using the Shifter library
 //Shifter shifter(SER_Pin, RCLK_Pin, SRCLK_Pin, NUM_REGISTERS);
 
-// create an object that talks to the RTC
-// Add in the 680 
-//DS1302 rtc(DS1302CEPin, DS1302IOPin, DS1302CLKPin);
 
-//void print_DS1302time()
-//{
-//  /* Get the current time and date from the chip */
-  //change to get nist time 
-  //Time t = rtc.time();
-
-  /* Format the time and date and insert into the temporary buffer */
-//  snprintf(buf, sizeof(buf), "DS1302 time: %02d:%02d:%02d",
-//  t.hr, t.min, t.sec);
-
-  /* Print the formatted string to serial so we can see the time */
-//  Serial.println(buf);
-
-//}
 
 void SWversion(void) {
   delay(2000);
@@ -588,7 +577,7 @@ String thistemp = "ledclock\\" + String(sign_name);//signname;
     //minute=t.min;
     //hour=t.hr; 
   //}
-
+  updateDate(); //get the nist time
   displaytime();        // display the current time
 
 
@@ -1183,27 +1172,7 @@ FastLED.show();
 }
 
 
-void incrementtime(void){
-  //this may not be needed
-/*  // increment the time counters keeping care to rollover as required
-  second=0;
-  if (++minute >= 60) {
-    minute=0;
-    if (++hour == 25) {
-      hour=1;  
-    }
-  }
-  // debug outputs
-  Serial.println("increment time");
-  //if (DS1302Present==1) print_DS1302time(); 
-  //else Serial.print("Arduino Time: " );
-  Serial.print(hour);
-  Serial.print(":");
-  Serial.print(minute);
-  Serial.print(":");
-  Serial.println(second);*/
 
-}
 
 
 
@@ -1227,18 +1196,11 @@ void loop(void)
   // and increment the seconds counter every 1000 ms
   if ( millis() - msTick >999) {
     msTick=millis();
-  //  second++;
-    // Flash the onboard Pin13 Led so we know something is hapening!
-   // digitalWrite(13, sizeof());
-   // delay(50);
-    //digitalWrite(13,LOW);  
-    //delay(50);
-    //digitalWrite(13, sizeof());
-    //delay(50);
-    //digitalWrite(13,LOW);  
+    adjustTime(1);
+   
 
-   // Serial.print(second);
-  //  Serial.print("..");
+   Serial.print(second());
+   Serial.print("..");
 
   }
 
@@ -1247,17 +1209,14 @@ void loop(void)
   //test to see if we need to increment the time counters
   if (second()==60) 
   {
-    incrementtime();
+  
     displaytime();
   }
-// change to test nist time once per day
-//  if (DS1302Present==1) {
-    // Get the current time and date from the chip 
-//    Time t = rtc.time();
-//    second=t.sec;     
-//    minute=t.min;
-//    hour=t.hr; 
-//  }
+   if ((hour()==23) && (minute()==1)) {
+    updateDate(); // actual need to call this only once per day not every minute 23:01
+   }
+  
+
 
  
   
