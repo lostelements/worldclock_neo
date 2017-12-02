@@ -1,3 +1,4 @@
+
 /**************************************************************************
  *                                                                         *
  *  The British W O R D C L O C K   -                                      *
@@ -31,24 +32,22 @@ FASTLED_USING_NAMESPACE
 //extern "C" {
 //#include "user_interface.h"  -- dont know what this is
 //}
-//#include <DS1302.h> //RTC Library
-//#include <Shifter.h> //74 Shift library  - not required anymore
+#include <TimeLib.h> //https://github.com/PaulStoffregen/Time
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <BME680_Library.h>
 #include <Wire.h>
-//#include <DallasTemperature.h> //on LostElements Git
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <FS.h>
 #include <EEPROM.h>
-//#include "GradientPalettes.h"
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h> //on Lostelemnts Git
+#include <WiFiUdp.h>
 
 // Define all the constants
-//define set name of yor bot
+//define set name of your bot
 String botname = "neoclock";
 String thistemp = "";
 char sign_name[10]; //name no spaces or special charcters
@@ -58,9 +57,9 @@ char mqtt_server[40];
 bool shouldSaveConfig = false;
 std::unique_ptr<ESP8266WebServer> server;
 
-//#define ONE_WIRE_BUS            D4      // DS18B20 pin
+
 #define DATA_PIN      D5     // Leds pin
-#define mysda   D0 // SDA
+#define mysda   D1 // SDA
 #define myscl   D2 //SCL
 #define LED_TYPE      WS2812B
 #define COLOR_ORDER   GRB
@@ -134,9 +133,153 @@ uint8_t power = 1;
 uint8_t glitter = 0;
 
 BME680_Library bme680;
+IPAddress timeServerIP;
 WiFiClient wclient;
-PubSubClient client(wclient, mqtt_server);
+PubSubClient client(wclient);
 
+const int NTP_PACKET_SIZE = 48;
+byte packetBuffer[NTP_PACKET_SIZE];
+WiFiUDP udp;
+
+bool isBST(int year, int month, int day, int hour)
+{
+    // bst begins at 01:00 gmt on the last sunday of march
+    // and ends at 01:00 gmt (02:00 bst) on the last sunday of october
+
+    // january, february, and november are out
+    if (month < 3 || month > 10) { return false; }
+
+    // april to september are in
+    if (month > 3 && month < 10) { return true; }
+
+    // last sunday of march
+    int lastMarSunday =  (31 - (5* year /4 + 4) % 7);
+
+    // last sunday of october
+    int lastOctSunday = (31 - (5 * year /4 + 1) % 7);
+
+    // in march we are bst if its past 1am gmt on the last sunday in the month
+    if (month == 3)
+    {
+        if (day > lastMarSunday)
+        {
+            return true;
+        }
+
+        if (day < lastMarSunday)
+        {
+            return false;
+        }
+
+        if (hour < 1)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    // in october we must be before 1am gmt (2am bst) on the last sunday to be bst
+    if (month == 10)
+    {
+        if (day < lastOctSunday)
+        {
+            return true;
+        }
+
+        if (day > lastOctSunday)
+        {
+            return false;
+        }
+
+        if (hour >= 1)
+        {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+// send an ntp request to the time server at the given address
+unsigned long sendNTPpacket(IPAddress& address)
+{
+    // set all bytes in the buffer to 0
+    memset(packetBuffer, 0, NTP_PACKET_SIZE);
+
+    packetBuffer[0] = 0b11100011;   // li, version, mode
+    packetBuffer[1] = 0;            // stratum, or type of clock
+    packetBuffer[2] = 6;            // polling interval
+    packetBuffer[3] = 0xEC;         // peer clock precision
+
+    // 8 bytes of zero for root delay & root dispersion
+    packetBuffer[12] = 49;
+    packetBuffer[13] = 0x4E;
+    packetBuffer[14] = 49;
+    packetBuffer[15] = 52;
+
+    // all ntp fields have been given values, send request
+    udp.beginPacket(address, 123);
+    udp.write(packetBuffer, NTP_PACKET_SIZE);
+    udp.endPacket();
+}
+
+void displayDate(unsigned long unixtime)
+{
+ //get the date stuff first   
+    int cb = 0;
+    int ntptries = 0;
+
+    while (!cb or (ntptries <=5))
+    {
+        // send an ntp packet to a time server
+        sendNTPpacket(timeServerIP);
+
+        // wait to see if a reply is available
+        delay(3000);
+        cb = udp.parsePacket();
+
+        // only try 5 times before exiting
+        ntptries++;
+        
+    }
+    if (cb) {
+      // we've received a packet, read the data into the buffer
+    udp.read(packetBuffer, NTP_PACKET_SIZE);
+
+    // the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. first, extract the two words:
+    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+
+    // combine the four bytes (two words) into a long integer
+    // this is ntp time (seconds since jan 1 1900):
+    unsigned long secsSince1900 = highWord << 16 | lowWord;
+
+    // unix time starts on jan 1 1970. in seconds, that's 2208988800:
+    const unsigned long seventyYears = 2208988800UL;
+
+    // subtract seventy years:
+    unsigned long epoch = secsSince1900 - seventyYears;
+    // handle british summer time
+    time_t nowntp = epoch;
+    int myhour;
+    if (isBST(year(nowntp), month(nowntp), day(nowntp), hour(nowntp)))
+    {
+        myhour = ((unixtime % 86400L) / 3600) + 1; // bst
+    }
+    else
+    {
+        myhour = (unixtime % 86400L) / 3600; // utc
+    }
+
+    // Alter below to upte the time in the system
+   
+  
+    }
+    
+    
+}
 char temperatureString[6];
 const unsigned long fiveMinutes = 5 * 60 * 1000UL;
 static unsigned long lastSampleTime = 0 - fiveMinutes; // initialize such that a reading is due the first time through loop()
@@ -206,7 +349,7 @@ int AFTERNOON[2] ={54,55};
 int INTHE[2] = {49,50};
 
 
-int  hour=3, minute=38, second=00;
+//int  hour=3, minute=38, second=00; //carefull of this
 static unsigned long msTick =0;  // the number of Millisecond Ticks since we last 
 // incremented the second counter
 int  count;
@@ -272,40 +415,23 @@ void SWversion(void) {
 
 void setup()
 {
-  // initialise the hardware	
-  // initialize the appropriate pins as outputs:
- // pinMode(SER_Pin, OUTPUT); 
- // pinMode(RCLK_Pin, OUTPUT); 
- // pinMode(SRCLK_Pin, OUTPUT); 
- // pinMode(FWDButtonPin, INPUT); 
- // pinMode(REVButtonPin, INPUT); 
-
-  //  setup 1302
-  // change to bm680 pins
-  //pinMode(DS1302IOPin, OUTPUT); 
-  //pinMode(DS1302CEPin, OUTPUT); 
-  //pinMode(DS1302CLKPin, OUTPUT); 
-
-  
-
+// initialise the hardware	
+ 
   Serial.begin(115200);   // setup the serial port to 9600 baud
   delay(100);
   Serial.setDebugOutput(true);
   SWversion ();
 
-   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);         // for WS2812 (Neopixel)
-  //FastLED.addLeds<LED_TYPE,DATA_PIN,CLK_PIN,COLOR_ORDER>(leds, NUM_LEDS); // for APA102 (Dotstar)
+//SETUP THE FAST LEDS  
+  FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);         // for WS2812 (Neopixel)
   FastLED.setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(brightness);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, MILLI_AMPS);
   fill_solid(leds, NUM_LEDS, solidColor);
   FastLED.show();
-
-  EEPROM.begin(512);
-  //loadSettings();
-
   FastLED.setBrightness(brightness);
 
+//Display Processor Details
   Serial.println();
   Serial.print( F("Heap: ") ); Serial.println(system_get_free_heap_size());
   Serial.print( F("Boot Vers: ") ); Serial.println(system_get_boot_version());
@@ -317,7 +443,7 @@ void setup()
   Serial.print( F("Vcc: ") ); Serial.println(ESP.getVcc());
   Serial.println();
 
-
+//SETUP SPIFFS
  SPIFFS.begin();
   {
     // Open Our config and read
@@ -337,12 +463,9 @@ void setup()
         json.printTo(Serial);
         if (json.success()) {
           Serial.println("\nparsed json");
-
           strcpy(sign_name, json["sign_name"]);
           strcpy(mqtt_server, json["mqtt_server"]);
-          strcpy(mqtt_port, json["mqtt_port"]);
-        
-
+          strcpy(mqtt_port, json["mqtt_port"]);   
         } else {
           Serial.println("failed to load json config");
         }
@@ -356,7 +479,8 @@ void setup()
     }
     Serial.printf("\n");
   }
-    // id/name placeholder/prompt default length
+  
+// WIFI CUSTOM PARAMETERS id/name placeholder/prompt default length
   WiFiManagerParameter custom_sign_name("name", "Sign Name", sign_name, 10);
   WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
@@ -372,8 +496,6 @@ void setup()
   wifimanager.addParameter(&custom_sign_name);
   wifimanager.addParameter(&custom_mqtt_server);
   wifimanager.addParameter(&custom_mqtt_port);
- 
-  //wifimanager.autoConnect("AutoConnectAP");
   Serial.println("connected...yeey before autoconnect:)");
   wifimanager.autoConnect();
   
@@ -404,6 +526,7 @@ void setup()
     //end save
   }
 
+//RESET SERVER WITH NEW SETTINGS (blelow may not be meeded
     server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
     Serial.print("Connected! Open http://");
     Serial.print(WiFi.localIP());
@@ -414,8 +537,15 @@ void setup()
    MDNS.begin(sign_name);
    MDNS.addService("http", "tcp", 80);
     Serial.println("mdns started");
+    
 //WiFiClient wclient;
-PubSubClient client(wclient, mqtt_server);
+    client.set_server(mqtt_server,1883);
+//PubSubClient client(wclient, mqtt_server);
+
+    udp.begin(2390);
+// get a random server from the pool
+    WiFi.hostByName("europe.pool.ntp.org", timeServerIP);
+
 
 //define set name of your sign
 //String signname = "Room1"; //should be loaded from spiffs
@@ -771,56 +901,56 @@ void displaytime(void){
   // settimeleds(THETIMEIS, sizeof());
 
   // now we display the appropriate minute counter
-  if ((minute>4) && (minute<10)) { 
+  if ((minute()>4) && (minute()<10)) { 
     settimeleds(MFIVE, sizeof(MFIVE));
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Five Minutes ");
   } 
-  if ((minute>9) && (minute<15)) { 
+  if ((minute()>9) && (minute()<15)) { 
     settimeleds(MTEN, sizeof(MTEN)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Ten Minutes ");
   }
-  if ((minute>14) && (minute<20)) {
+  if ((minute()>14) && (minute()<20)) {
     settimeleds(QUARTER, sizeof(QUARTER)); 
     Serial.print("Quarter ");
   }
-  if ((minute>19) && (minute<25)) { 
+  if ((minute()>19) && (minute()<25)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Twenty Minutes ");
   }
-  if ((minute>24) && (minute<30)) { 
+  if ((minute()>24) && (minute()<30)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES));
     Serial.print("Twenty Five Minutes ");
   }  
-  if ((minute>29) && (minute<35)) {
+  if ((minute()>29) && (minute()<35)) {
     settimeleds(HALF, sizeof(HALF));
     Serial.print("Half ");
   }
-  if ((minute>34) && (minute<40)) { 
+  if ((minute()>34) && (minute()<40)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES));
     Serial.print("Twenty Five Minutes ");
   }  
-  if ((minute>39) && (minute<45)) { 
+  if ((minute()>39) && (minute()<45)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Twenty Minutes ");
   }
-  if ((minute>44) && (minute<50)) {
+  if ((minute()>44) && (minute()<50)) {
     settimeleds(QUARTER, sizeof(QUARTER)); 
     Serial.print("Quarter ");
   }
-  if ((minute>49) && (minute<55)) { 
+  if ((minute()>49) && (minute()<55)) { 
     settimeleds(MTEN, sizeof(MTEN)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Ten Minutes ");
   } 
-  if (minute>54) { 
+  if (minute()>54) { 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
     Serial.print("Five Minutes ");
@@ -828,9 +958,9 @@ void displaytime(void){
 
 
 
-  if ((minute <5))
+  if ((minute() <5))
   {
-    switch (hour) {
+    switch (hour()) {
     case 1:
     case 13: 
       settimeleds(ONE, sizeof(ONE)); 
@@ -896,11 +1026,11 @@ void displaytime(void){
     Serial.println("O'Clock");
   }
   else
-    if ((minute < 35) && (minute >4))
+    if ((minute() < 35) && (minute() >4))
     {
       settimeleds(PAST, sizeof(PAST));
       Serial.print("Past ");
-      switch (hour) {
+      switch (hour()) {
       case 1:
       case 13: 
         settimeleds(ONE, sizeof(ONE)); 
@@ -969,7 +1099,7 @@ void displaytime(void){
       // the next hour, as we will be displaying a 'to' sign
       settimeleds(TO, sizeof(TO));
       Serial.print("To ");
-      switch (hour) {
+      switch (hour()) {
       case 1: 
       case 13:
         settimeleds(TWO, sizeof(TWO)); 
@@ -1034,10 +1164,10 @@ void displaytime(void){
     }
 
 // Now set the AM or PM
- if (hour >= 12 && hour <= 23){
+ if (hour() >= 12 && hour() <= 23){
      settimeleds(AFTERNOON, sizeof(AFTERNOON));
      Serial.println("afternoon");
-     Serial.println(hour);
+     Serial.println(hour());
  } 
  else{
    settimeleds(MORNING, sizeof(MORNING));
@@ -1054,7 +1184,8 @@ FastLED.show();
 
 
 void incrementtime(void){
-  // increment the time counters keeping care to rollover as required
+  //this may not be needed
+/*  // increment the time counters keeping care to rollover as required
   second=0;
   if (++minute >= 60) {
     minute=0;
@@ -1070,7 +1201,7 @@ void incrementtime(void){
   Serial.print(":");
   Serial.print(minute);
   Serial.print(":");
-  Serial.println(second);
+  Serial.println(second);*/
 
 }
 
@@ -1087,14 +1218,7 @@ void loop(void)
     reconnect();
   }
   
-
   client.loop();
- 
-  
- // client.publish(roomtemp, temperatureString);
-  //client.subscribe(messages);
-  //client.subscribe(dinner);
-  //client.subscribe(dick);
   sendtemp();
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
   //Serial.println("Loop Started");
@@ -1103,7 +1227,7 @@ void loop(void)
   // and increment the seconds counter every 1000 ms
   if ( millis() - msTick >999) {
     msTick=millis();
-    second++;
+  //  second++;
     // Flash the onboard Pin13 Led so we know something is hapening!
    // digitalWrite(13, sizeof());
    // delay(50);
@@ -1121,7 +1245,7 @@ void loop(void)
 
 
   //test to see if we need to increment the time counters
-  if (second==60) 
+  if (second()==60) 
   {
     incrementtime();
     displaytime();
