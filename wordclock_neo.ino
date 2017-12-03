@@ -414,11 +414,12 @@ void setup()
 //SETUP THE FAST LEDS  
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);         // for WS2812 (Neopixel)
   FastLED.setCorrection(TypicalLEDStrip);
-  FastLED.setBrightness(brightness);
+  //FastLED.setBrightness(brightness);
+  FastLED.setBrightness(100);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, MILLI_AMPS);
   fill_solid(leds, NUM_LEDS, solidColor);
   FastLED.show();
-  FastLED.setBrightness(brightness);
+  FastLED.setBrightness(100);
 
 //Display Processor Details
   Serial.println();
@@ -773,105 +774,116 @@ void settempleds( int b[], int sizeOfArray ){
 
 // change tyo use fastled and in the
 void selftest(void){
+  //test each led in turn REd then black
+  for ( byte i = 0; i < NUM_LEDS; i++ ) {
+
+    leds[i] = CRGB::Red;
+
+    FastLED.delay(100);
+
+    leds[i] = CRGB::Black;
+
+  }
+  delay(500);
   // start by clearing the display to a known state
   FastLED.clear();
   // now light each led set in turn
   settimeleds (THETIMEIS, sizeof(THETIMEIS));
   FastLED.show();
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(MTEN, sizeof(MTEN));
   FastLED.show();   
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(HALF, sizeof(HALF));
   FastLED.show();    
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(TWENTY, sizeof(TWENTY));
   FastLED.show();  
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(QUARTER, sizeof(QUARTER));
   FastLED.show(); 
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(MFIVE, sizeof(MFIVE));
   FastLED.show();   
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(MINUTES, sizeof(MINUTES));
   FastLED.show(); 
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(PAST, sizeof(PAST));
   FastLED.show();    
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(TO, sizeof(TO));
   FastLED.show();      
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(ONE, sizeof(ONE));
   FastLED.show();     
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(TWO, sizeof(TWO));
   FastLED.show();     
   delay(500); 
-  
+  FastLED.clear(); 
   settimeleds(THREE, sizeof(THREE));
   FastLED.show();   
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(FOUR, sizeof(FOUR));
   FastLED.show();    
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(FIVE, sizeof(FIVE));
   FastLED.show();   
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(SIX, sizeof(SIX));
   FastLED.show();     
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(SEVEN, sizeof(SEVEN));
   FastLED.show();   
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(EIGHT, sizeof(EIGHT));
   FastLED.show();   
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(NINE, sizeof(NINE));
   FastLED.show();    
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(TEN, sizeof(TEN));
   FastLED.show();    
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(ELEVEN, sizeof(ELEVEN));
   FastLED.show();  
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(TWELVE, sizeof(TWELVE));
   FastLED.show();  
   delay(500); 
- 
+  FastLED.clear();
   settimeleds(OCLOCK, sizeof(OCLOCK));
   FastLED.show();  
   delay(500); 
-
+ FastLED.clear();
   settimeleds(INTHE, sizeof(INTHE));
   FastLED.show();    
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(MORNING, sizeof(MORNING));
   FastLED.show();    
   delay(500); 
-  
+   FastLED.clear();
   settimeleds(AFTERNOON, sizeof(AFTERNOON));
   FastLED.show(); 
   delay(500); 
