@@ -132,7 +132,7 @@ typedef PatternAndName PatternAndNameList[];
 uint8_t power = 1;
 uint8_t glitter = 0;
 
-BME680_Library bme680;
+BME680_Library bme680(0x76);
 IPAddress timeServerIP;
 WiFiClient wclient;
 PubSubClient client(wclient);
@@ -631,7 +631,9 @@ void reconnect() {
   // Loop until we're reconnected  - change to same as basic, try one
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect(botname)) {
+    if (client.connect(MQTT::Connect(botname)
+
+      .set_auth("user", "secret")))  {
       Serial.println("connected");
     } else {
       Serial.print("failed, rc=");
@@ -1156,7 +1158,7 @@ void displaytime(void){
  if (hour() >= 12 && hour() <= 23){
      settimeleds(AFTERNOON, sizeof(AFTERNOON));
      Serial.println("afternoon");
-     Serial.println(hour());
+     //Serial.println(hour());
  } 
  else{
    settimeleds(MORNING, sizeof(MORNING));
@@ -1194,7 +1196,9 @@ void loop(void)
   
   // heart of the timer - keep looking at the millisecond timer on the Arduino
   // and increment the seconds counter every 1000 ms
-  if ( millis() - msTick >999) {
+  Serial.print(second());
+   Serial.print("..");
+  /*if ( millis() - msTick >999) {
     msTick=millis();
     adjustTime(1);
    
@@ -1202,16 +1206,16 @@ void loop(void)
    Serial.print(second());
    Serial.print("..");
 
-  }
+  }*/
 
 
 
   //test to see if we need to increment the time counters
-  if (second()==60) 
-  {
+ // if (second()==60) 
+//  {
   
     displaytime();
-  }
+ // }
    if ((hour()==23) && (minute()==1)) {
     updateDate(); // actual need to call this only once per day not every minute 23:01
    }
