@@ -345,7 +345,7 @@ int EIGHT[2] ={32,33};
 //const int MFIVE = 18;
 int MFIVE[1] ={12};
 //const int MORNING = 0;
-int MORNING[3] ={51,52,53};
+int MORNING[3] ={50,51,52};
 //const int ELEVEN = 20;
 int ELEVEN[3] ={45,46,47};
 //const int TEN = 21;
@@ -355,8 +355,8 @@ int NINE[2] ={38,39};
 //const int FOUR = 23;
 int FOUR[2] ={34,35};
 //const int AFTERNOON = 10;
-int AFTERNOON[2] ={54,55};
-int INTHE[2] = {49,50};
+int AFTERNOON[3] ={53,54,55};
+int INTHE[2] = {48,49};
 
 
 //int  hour=3, minute=38, second=00; //carefull of this
@@ -678,27 +678,41 @@ void sendtemp(){
    
   }
 }
-
 void settimeleds( int b[], int sizeOfArray ){
+//void settimeleds( int *ptr, int sizeOfArray ){
    // put a loop in here to set the leds based on the strings, pass string and length
    // add in allways on the time is and in the so we dont need to keep calling unless showing temp
-   for (int k = 0 ; k <sizeOfArray ; ++k )
-   leds[k] = CRGB::Cornsilk;
+   int ld;
+   for (int k = 0 ; k <sizeOfArray ; ++k ){
+   ld = b[k];
+   //Serial.print (ld);
+   leds[ld] = CRGB::Cornsilk;
+   }
   //FastLED.clear();
   // Now, turn on the "It is" leds and timeis
   leds[0] = CRGB::Cornsilk;
   leds[1] = CRGB::Cornsilk;
   leds[2] = CRGB::Cornsilk;
   leds[3] = CRGB::Cornsilk;
+  leds[48] = CRGB::Cornsilk;
   leds[49] = CRGB::Cornsilk;
-  leds[50] = CRGB::Cornsilk;
 
 }
 void settempleds( int b[], int sizeOfArray ){
+//void settempleds( int *ptr, int sizeOfArray ){
    // put a loop in here to set the leds based on the strings, pass string and length
    // add in allways on the time is and in the so we dont need to keep calling unless showing temp
-   for (int k = 0 ; k <sizeOfArray ; ++k )
-   leds[k] = CRGB::Cornsilk;
+   int ld;
+   Serial.print ("array:");
+   Serial.print (sizeOfArray);
+   Serial.println ();
+   for (int k = 0 ; k <sizeOfArray ; ++k ){
+   ld = b[k];
+   Serial.print (ld);
+   Serial.print ("-");
+   leds[ld] = CRGB::Cornsilk;
+   }
+   Serial.println ();
   //FastLED.clear();
  //set colour based on temp
 
@@ -788,71 +802,71 @@ void selftest(void){
   // start by clearing the display to a known state
   FastLED.clear();
   // now light each led set in turn
-  settimeleds (THETIMEIS, sizeof(THETIMEIS));
+  settempleds (THETIMEIS, sizeof(THETIMEIS));
   FastLED.show();
   delay(500); 
    FastLED.clear();
-  settimeleds(MTEN, sizeof(MTEN));
+  settempleds(MTEN, sizeof(MTEN));
   FastLED.show();   
   delay(500); 
    FastLED.clear();
-  settimeleds(HALF, sizeof(HALF));
+  settempleds(HALF, sizeof(HALF));
   FastLED.show();    
   delay(500); 
    FastLED.clear();
-  settimeleds(TWENTY, sizeof(TWENTY));
+  settempleds(TWENTY, sizeof(TWENTY));
   FastLED.show();  
   delay(500); 
    FastLED.clear();
-  settimeleds(QUARTER, sizeof(QUARTER));
+  settempleds(QUARTER, sizeof(QUARTER));
   FastLED.show(); 
   delay(500); 
   FastLED.clear();
-  settimeleds(MFIVE, sizeof(MFIVE));
+  settempleds(MFIVE, sizeof(MFIVE));
   FastLED.show();   
   delay(500); 
    FastLED.clear();
-  settimeleds(MINUTES, sizeof(MINUTES));
+  settempleds(MINUTES, sizeof(MINUTES));
   FastLED.show(); 
   delay(500); 
    FastLED.clear();
-  settimeleds(PAST, sizeof(PAST));
+  settempleds(PAST, sizeof(PAST));
   FastLED.show();    
   delay(500); 
   FastLED.clear();
-  settimeleds(TO, sizeof(TO));
+  settempleds(TO, sizeof(TO));
   FastLED.show();      
   delay(500); 
    FastLED.clear();
-  settimeleds(ONE, sizeof(ONE));
+  settempleds(ONE, sizeof(ONE));
   FastLED.show();     
   delay(500); 
   FastLED.clear();
-  settimeleds(TWO, sizeof(TWO));
+  settempleds(TWO, sizeof(TWO));
   FastLED.show();     
   delay(500); 
   FastLED.clear(); 
-  settimeleds(THREE, sizeof(THREE));
+  settempleds(THREE, sizeof(THREE));
   FastLED.show();   
   delay(500); 
   FastLED.clear();
-  settimeleds(FOUR, sizeof(FOUR));
+  settempleds(FOUR, sizeof(FOUR));
   FastLED.show();    
   delay(500); 
    FastLED.clear();
-  settimeleds(FIVE, sizeof(FIVE));
+  settempleds(FIVE, sizeof(FIVE));
   FastLED.show();   
   delay(500); 
    FastLED.clear();
-  settimeleds(SIX, sizeof(SIX));
+  settempleds(SIX, sizeof(SIX));
   FastLED.show();     
   delay(500); 
    FastLED.clear();
-  settimeleds(SEVEN, sizeof(SEVEN));
+  settempleds(SEVEN, sizeof(SEVEN));
   FastLED.show();   
   delay(500); 
    FastLED.clear();
-  settimeleds(EIGHT, sizeof(EIGHT));
+  settempleds(EIGHT, sizeof(EIGHT));
   FastLED.show();   
   delay(500); 
    FastLED.clear();
@@ -860,31 +874,31 @@ void selftest(void){
   FastLED.show();    
   delay(500); 
    FastLED.clear();
-  settimeleds(TEN, sizeof(TEN));
+  settempleds(TEN, sizeof(TEN));
   FastLED.show();    
   delay(500); 
   FastLED.clear();
-  settimeleds(ELEVEN, sizeof(ELEVEN));
+  settempleds(ELEVEN, sizeof(ELEVEN));
   FastLED.show();  
   delay(500); 
    FastLED.clear();
-  settimeleds(TWELVE, sizeof(TWELVE));
+  settempleds(TWELVE, sizeof(TWELVE));
   FastLED.show();  
   delay(500); 
   FastLED.clear();
-  settimeleds(OCLOCK, sizeof(OCLOCK));
+  settempleds(OCLOCK, sizeof(OCLOCK));
   FastLED.show();  
   delay(500); 
  FastLED.clear();
-  settimeleds(INTHE, sizeof(INTHE));
+  settempleds(INTHE, sizeof(INTHE));
   FastLED.show();    
   delay(500); 
    FastLED.clear();
-  settimeleds(MORNING, sizeof(MORNING));
+  settempleds(MORNING, sizeof(MORNING));
   FastLED.show();    
   delay(500); 
    FastLED.clear();
-  settimeleds(AFTERNOON, sizeof(AFTERNOON));
+  settempleds(AFTERNOON, sizeof(AFTERNOON));
   FastLED.show(); 
   delay(500); 
   
