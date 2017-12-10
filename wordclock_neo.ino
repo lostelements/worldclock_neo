@@ -8,17 +8,14 @@
  *            English Desgn and English Hardware                           *
  *                                                                         *
  *   Copyright (C) 2014  Battle VA                                         *
- * commands are shifter.clear()*
- *              shifter.write()*
- *              settimeleds(1, sizeof()) or LOW*
  *                                                                         *
  *                                                                         
- *   To Do, modify  to use fastled and remove shifter                                                                      
- *   modify for use on esp8266
- *   include wifimanager with parameters
- *   set up for mqtt listnen to allow clock to be set
+ *   done - modify  to use fastled and remove shifter                                                                      
+ *   done - modify for use on esp8266
+ *   done -include wifimanager with parameters
+ *   use nist for clock
  *   set up for mqtt to change pallets seasonally
- *   add dallas one wire temperature
+ *   bme680
  *   mqtt temperature
  *   set display to show temperature using words on button press
  *   
@@ -41,7 +38,7 @@ FASTLED_USING_NAMESPACE
 #include <ESP8266mDNS.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <FS.h>
-#include <EEPROM.h>
+//#include <EEPROM.h>
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <PubSubClient.h> //on Lostelemnts Git
 #include <WiFiUdp.h>
@@ -61,19 +58,14 @@ std::unique_ptr<ESP8266WebServer> server;
 #define DATA_PIN      D5     // Leds pin
 #define mysda   D1 // SDA
 #define myscl   D2 //SCL
+#define palletchange D6 // pallet change button
+#define glitterbutton D7 // to turn glitter on and off
 #define LED_TYPE      WS2812B
 #define COLOR_ORDER   GRB
 // Set your number of leds here!
 #define NUM_LEDS      56
 
-#define EEPROM_BRIGHTNESS      0
-#define EEPROM_PATTERN      1
-#define EEPROM_SOLID_R      2
-#define EEPROM_SOLID_G      3
-#define EEPROM_SOLID_B      4
-#define EEPROM_PALETTE      5
-#define EEPROM_LIT      6
-#define EEPROM_BIG      7
+
 #define MILLI_AMPS         1500     // IMPORTANT: set here the max milli-Amps of your power supply 5V 2A = 2000
 #define AP_POWER_SAVE      1   // Set to 0 if you do not want the access point to shut down after 10 minutes of unuse
 #define FRAMES_PER_SECOND  120 // here you can control the speed. With the Access Point / Web Server the animations run a bit slower.
@@ -86,23 +78,16 @@ int lit = NUM_LEDS;
 uint8_t patternIndex = 0;
 const uint8_t brightnessCount = 5;
 uint8_t brightnessMap[brightnessCount] = { 16, 32, 64, 128, 255 };
-int brightnessIndex = 0;
+int brightnessIndex = 4;
 uint8_t brightness = brightnessMap[brightnessIndex];
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
-// ten seconds per color palette makes a good demo
-// 20-120 is better for deployment
-uint8_t secondsPerPalette = 10;
-// SPARKING: What chance (out of 255) is there that a new spark will be lit?
-// Higher chance = more roaring fire.  Lower chance = more flickery fire.
-// Default 120, suggested range 50-200.
-uint8_t sparking = 60;
-uint8_t speed = 30;
-// Current palette number from the 'playlist' of color palettes
-uint8_t gCurrentPaletteNumber = 0;
 
-CRGBPalette16 gCurrentPalette( CRGB::Black);
-//CRGBPalette16 gTargetPalette( gGradientPalettes[0] );
-CRGBPalette16 IceColors_p = CRGBPalette16(CRGB::Black, CRGB::Blue, CRGB::Aqua, CRGB::White);
+// Current palette number from the 'playlist' of color palettes
+uint8_t gCurrentPaletteNumber = 7;
+
+CRGBPalette16 gCurrentPalette( CRGB::Cornflour);
+TBlendType    currentBlending;
+
 uint8_t currentPatternIndex = 0; // Index number of which pattern is current
 uint8_t autoplay = 0;
 uint8_t autoplayDuration = 10;
@@ -294,69 +279,35 @@ char temperatureString[6];
 const unsigned long fiveMinutes = 5 * 60 * 1000UL;
 static unsigned long lastSampleTime = 0 - fiveMinutes; // initialize such that a reading is due the first time through loop()
 int buttonState = 0;
-// To HERE?
 
+// Display  assignments
 
-
-// Shifter pin Assignments
-//const int SER_Pin = 4;  //SER_IN
-//const int RCLK_Pin = 3; //L_CLOCK
-//const int SRCLK_Pin = 2; //Clock
-//const int NUM_REGISTERS = 3; //number of shift registers
-
-// Display pin assignments
-// Replaced With Arrays For NEO Version
-
-//const int MINUTES = 1;
-int MINUTES[3] ={9,10,11};
-//const int MTEN = 2; 
-int MTEN[2] ={5,7};
-//const int HALF = 3;
-int HALF[2] ={16,17};
-//const int PAST = 4; 
-int PAST[2] ={18,19};
-//const int THREE = 5;
-int THREE[2] ={30.31};
-//const int THETIMEIS = 6;
 int THETIMEIS[4] = {0,1,2,3};
-
-//const int TWENTY = 7;
-int TWENTY[3] ={13,14,15};
-//const int TO = 8;
-int TO[1] ={8};
-//const int TWO = 9;
-int TWO[2] ={22,23};
-//const int SIX = 19;
-int SIX[2] ={20,21};
-//const int TWELVE = 11;
-int TWELVE[2] ={43,44};
-//const int FIVE = 12;
-int FIVE[2] ={28,29};
-//const int SEVEN = 13;
-int SEVEN[2] ={36,37};
-//const int OCLOCK = 14;
-int OCLOCK[3] ={40,41,42};
-//const int ONE = 15;
-int ONE[2] ={24,25};
-//const int QUARTER = 16;
 int QUARTER[2] ={4,5};
-//const int EIGHT = 17;
-int EIGHT[2] ={32,33};
-//const int MFIVE = 18;
+int MTEN[2] ={6,7};
+int TO[1] ={8};
+int MINUTES[3] ={9,10,11}; 
 int MFIVE[1] ={12};
-//const int MORNING = 0;
-int MORNING[3] ={50,51,52};
-//const int ELEVEN = 20;
-int ELEVEN[3] ={45,46,47};
-//const int TEN = 21;
+int TWENTY[3] ={13,14,15};
+int HALF[2] ={16,17};
+int PAST[2] ={18,19};
+int SIX[2] ={20,21};
+int TWO[2] ={22,23};
+int ONE[2] ={24,25};
 int TEN[2] ={26,27};
-//const int NINE = 22;
-int NINE[2] ={38,39};
-//const int FOUR = 23;
+int FIVE[2] ={28,29};
+int THREE[2] ={30,31};
+int EIGHT[2] ={32,33};
 int FOUR[2] ={34,35};
-//const int AFTERNOON = 10;
-int AFTERNOON[3] ={53,54,55};
+int SEVEN[2] ={36,37};
+int NINE[2] ={38,39};
+int OCLOCK[3] ={40,41,42};
+int TWELVE[2] ={43,44};
+int ELEVEN[3] ={45,46,47};
 int INTHE[2] = {48,49};
+int MORNING[3] ={50,51,52};
+int AFTERNOON[3] ={53,54,55};
+
 
 
 //int  hour=3, minute=38, second=00; //carefull of this
@@ -365,20 +316,9 @@ static unsigned long msTick =0;  // the number of Millisecond Ticks since we las
 int  count;
 int  selftestmode;          // 1 = in self test - flash display
 //int  DS1302Present=1;       // flag to indicate that the 1302 is there..    1 = present
-char Display1=0, Display2=0, Display3=0, Led1=0, Led2=0, Led3=0, Led4=0;
-int  OldHardware = 0;  // 1 = we are running on old hardwrae
-int  BTNActive = 1;    // the sense of the button inputs (Changes based on hardware type)
-
-                        
-
-
-// buttons
-//int FWDButtonPin=5;
-//int REVButtonPin=7;
-
-
-
-
+//char Display1=0, Display2=0, Display3=0, Led1=0, Led2=0, Led3=0, Led4=0;
+//int  OldHardware = 0;  // 1 = we are running on old hardwrae
+//int  BTNActive = 1;    // the sense of the button inputs (Changes based on hardware type)
 
 
 /* Create buffers */
@@ -391,14 +331,10 @@ void saveConfigCallback () {
 }
 
 
-//initaize shifter using the Shifter library
-//Shifter shifter(SER_Pin, RCLK_Pin, SRCLK_Pin, NUM_REGISTERS);
-
-
 
 void SWversion(void) {
   delay(2000);
-  Serial.println("British Word Clock copyright 2014 BattleVA");
+  Serial.println("British Neo Word Clock copyright 2017 BattleVA");
   
 }
 
@@ -414,12 +350,12 @@ void setup()
 //SETUP THE FAST LEDS  
   FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);         // for WS2812 (Neopixel)
   FastLED.setCorrection(TypicalLEDStrip);
-  //FastLED.setBrightness(brightness);
-  FastLED.setBrightness(100);
+  FastLED.setBrightness(brightness);
+  //FastLED.setBrightness(100);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, MILLI_AMPS);
   fill_solid(leds, NUM_LEDS, solidColor);
   FastLED.show();
-  FastLED.setBrightness(100);
+  //FastLED.setBrightness(100);
 
 //Display Processor Details
   Serial.println();
@@ -569,15 +505,9 @@ String thistemp = "ledclock\\" + String(sign_name);//signname;
   selftest();  // validate the hardware for the user
 
   selftestmode=0;
+  pinMode(palletchange,INPUT);
+  pinMode(palletchange,INPUT_PULLUP);
 
-// change this to get nist time is connected to the internet
-  //if (DS1302Present==1) {
-    // Get the current time and date from the chip 
-    //Time t = rtc.time();
-    //second=t.sec;     
-    //minute=t.min;
-    //hour=t.hr; 
-  //}
   updateDate(); //get the nist time
   displaytime();        // display the current time
 
@@ -638,7 +568,6 @@ void reconnect() {
       Serial.println("connected");
     } else {
       Serial.print("failed, rc=");
-     /* Serial.print(client.state());*/
       Serial.println(" try on next loop");     
     }
 }
@@ -682,35 +611,47 @@ void settimeleds( int b[], int sizeOfArray ){
 //void settimeleds( int *ptr, int sizeOfArray ){
    // put a loop in here to set the leds based on the strings, pass string and length
    // add in allways on the time is and in the so we dont need to keep calling unless showing temp
+
+   currentPaletteIndex = random(0,255);
    int ld;
-   for (int k = 0 ; k <sizeOfArray ; ++k ){
+   for (int k = 0 ; k <(sizeOfArray/4) ; ++k ){
    ld = b[k];
    //Serial.print (ld);
-   leds[ld] = CRGB::Cornsilk;
+   leds[ld] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
    }
   //FastLED.clear();
   // Now, turn on the "It is" leds and timeis
-  leds[0] = CRGB::Cornsilk;
-  leds[1] = CRGB::Cornsilk;
-  leds[2] = CRGB::Cornsilk;
-  leds[3] = CRGB::Cornsilk;
-  leds[48] = CRGB::Cornsilk;
-  leds[49] = CRGB::Cornsilk;
+  leds[0] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
+  leds[1] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
+  leds[2] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
+  leds[3] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
+  leds[48] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
+   currentPaletteIndex = random(0,255);
+  leds[49] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);// CRGB::Cornsilk;
 
 }
 void settempleds( int b[], int sizeOfArray ){
 //void settempleds( int *ptr, int sizeOfArray ){
    // put a loop in here to set the leds based on the strings, pass string and length
    // add in allways on the time is and in the so we dont need to keep calling unless showing temp
+  currentPaletteIndex = random(0,255);
    int ld;
-   Serial.print ("array:");
-   Serial.print (sizeOfArray);
-   Serial.println ();
-   for (int k = 0 ; k <sizeOfArray ; ++k ){
+   //Serial.print ("array:");
+   //Serial.print (sizeOfArray);
+   //Serial.println ();
+   for (int k = 0 ; k <(sizeOfArray/4) ; ++k ){
    ld = b[k];
    Serial.print (ld);
    Serial.print ("-");
-   leds[ld] = CRGB::Cornsilk;
+   // change this to scroll through pallets selected by button
+   //leds[ld] = CRGB::Cornsilk;
+   leds[ld] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);
+    currentPaletteIndex = random(0,255);
    }
    Serial.println ();
   //FastLED.clear();
@@ -720,70 +661,7 @@ void settempleds( int b[], int sizeOfArray ){
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 
-  // test whether the DS1302 is there
-  //Serial.print("Verifying DS1302 ");
-  // start by verifying that the chip has a valid signature
-/*  if (rtc.read_register(0x20) == 0xa5) {
-    // Signature is there - set the present flag and mmove on
-    DS1302Present=1;
-    Serial.println("present - Valid Signature");
-    rtc.write_protect(false);
-    rtc.halt(false);
-  }
-  else 
-  {
-    // Signature isnt there - may be a new chip - 
-    //   do a write to see if it will hold the signature 
-    rtc.write_register(0x20,0xa5);
-    if (rtc.read_register(0x20) == 0xa5) {
-      // We can store data - assume that it is a new chip that needs initialisation
-      // Start by turning off write protection and clearing the clock halt flag.
-      rtc.write_protect(false);
-      rtc.halt(false);
-      // Make a new time object to set the date and time 
-      Time t(2010, 04, 28, 10, 30, 10, 01);
-      // Set the time and date on the chip 
-      rtc.time(t);
-      // set the DS1302 present flag
-      DS1302Present=1;
-      Serial.println("present - new chip initialised.");
-    }
-    else  Serial.println("absent");
-  }  
-*/
-  // determine whether we are running on old or new hardware
-  // old hardware tied the push buttons to ground using 4k7 resistors
-  // and relied on the buttons to pull them high
-  // new hardware uses internal pullups, and uses the buttons
-  // to pull the inputs down.
-
- // digitalWrite(FWDButtonPin, HIGH);  // Turn on weak pullups
- // digitalWrite(REVButtonPin, HIGH);  // Turn on weak pullups
-
- // OldHardware=0;
- // if ( digitalRead(FWDButtonPin)==0 && digitalRead(REVButtonPin)==0)
- // {
- //   Serial.println("Detected Old Hardware");
- //   OldHardware=1;  // we have old hardware
- //   BTNActive = 1; // True = active for old hardware
- //   digitalWrite(FWDButtonPin,LOW);  // Turn off weak pullups
- //   digitalWrite(REVButtonPin,LOW);  // Turn off weak pullups
-
-  //}
-  //else
-  //{
-    //Serial.println("Detected New Hardware");
-    //OldHardware=0;  // we have old hardware
-    //BTNActive = 0; // True = active for old hardware
-  //}
-
-
  
-
-
- 
-
-
 
 
 // change tyo use fastled and in the
@@ -1220,114 +1098,35 @@ void loop(void)
   ////////////////////////////////////////////////////////////////////////////////////////////////////////
   //Serial.println("Loop Started");
   
-  // heart of the timer - keep looking at the millisecond timer on the Arduino
-  // and increment the seconds counter every 1000 ms
+  
   Serial.print(second());
    Serial.print("..");
-  /*if ( millis() - msTick >999) {
-    msTick=millis();
-    adjustTime(1);
-   
-
-   Serial.print(second());
-   Serial.print("..");
-
-  }*/
-
-
-
-  //test to see if we need to increment the time counters
- // if (second()==60) 
-//  {
   
+// Change Pallet Colour if needed/ wanted
+  if (digitalRead(palletchange) == LOW) {
+    gCurrentPaletteNumber += 1;
+    if (gCurrentPaletteNumber == 8){gCurrentPaletteNumber = 0;}
+    //set the pallete
+    Serial.print("changing pallete to:");     
+    Serial.print(gCurrentPaletteNumber);
+    if( gCurrentPaletteNumber == 0)  { gCurrentPalette = RainbowColors_p;         currentBlending = LINEARBLEND; } 
+    if( gCurrentPaletteNumber == 1)  { gCurrentPalette = RainbowStripeColors_p;   currentBlending = LINEARBLEND; }    
+    if( gCurrentPaletteNumber == 2)  { gCurrentPalette = CloudColors_p;           currentBlending = LINEARBLEND; }    
+    if( gCurrentPaletteNumber == 3)  { gCurrentPalette = PartyColors_p;           currentBlending = LINEARBLEND; }  
+    if( gCurrentPaletteNumber == 4)  { gCurrentPalette = ForestColors_p;           currentBlending = LINEARBLEND; } 
+    if( gCurrentPaletteNumber == 5)  { gCurrentPalette = LavaColors_p;           currentBlending = LINEARBLEND; } 
+    if( gCurrentPaletteNumber == 6)  { gCurrentPalette = OceanColors_p;           currentBlending = LINEARBLEND; }  
+    if( gCurrentPaletteNumber == 7)  { gCurrentPalette = CRGBPalette16(CRGB::Cornsilk);           currentBlending = NOBLEND; } 
+    delay(500); //debounce
+    }
+// Add Glitter
+
+// Show Time and reset as needed
     displaytime();
- // }
+
    if ((hour()==23) && (minute()==1)) {
     updateDate(); // actual need to call this only once per day not every minute 23:01
    }
-  
-
-
- 
-  
-
-  // test to see if both buttons are being held down
-  // if so  - start a self test till both buttons are held
-  // down again.
-  /*
-  if ( digitalRead(FWDButtonPin)==BTNActive && digitalRead(REVButtonPin)==BTNActive)
-  {
-    selftestmode = !selftestmode;
-    if (selftestmode) Serial.println("Selftest Mode TRUE");
-    else Serial.println("Selftest mode FALSE");
-  }
-*/
-  //    if (selftestmode) { 
-  //      for(int i=0; i<100; i++)
-  //      {
-  //      Display1=255; Display2=255; Display3=255;
-  //      WriteLEDs(); delay(101-i);
-  //      ledsoff(); WriteLEDs();delay(101-i);
-  //      if (digitalRead(FWDButtonPin)==1) selftestmode=!selftestmode;
-  //     
-  //      }
-  //      displaytime();
-  //      
-  //    }
-
-
-  // test to see if a forward button is being held down
-  // for time setting
- /* if (digitalRead(FWDButtonPin) ==BTNActive ) 
-    // the forward button is down
-    // and it has been more than one second since we
-    // last looked
-
-  {
-    Serial.println("Forward Button Down");
-    //minute=(((minute/5)*5) +5); 
-    incrementtime();
-    second++;  // Increment the second counter to ensure that the name
-    // flash doesnt happen when setting time
-    //if (DS1302Present==1) {
-      // Make a new time object to set the date and time 
-      //Time t(2010, 04, 28, hour, minute, second, 01);
-      // Set the time and date on the chip 
-      //rtc.time(t);
-    //} 
-    delay(100);
-    displaytime();
-  }*/
-
-  // test to see if the back button is being held down
-  // for time setting
-/*  
-  if (digitalRead(REVButtonPin)==BTNActive ) 
-  {
-
-    Serial.println("Backwards Button Down");
-    minute--; 
-    minute--;
-    second=0; // decrement the minute counter
-    if (minute<0) { 
-      minute=58; 
-      if (--hour <0) hour=23;
-    } 
-    incrementtime();
-    second++;  // Increment the second counter to ensure that the name
-    // flash doesnt happen when setting time  
-
-
-    if (DS1302Present==1) {
-      // Make a new time object to set the date and time 
-      Time t(2010, 04, 28, hour, minute, second, 01);
-      // Set the time and date on the chip 
-      rtc.time(t);
-    }
-
-    displaytime();
-    delay(100);
-  }*/
 
 }		  
 
