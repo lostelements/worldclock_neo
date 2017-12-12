@@ -85,7 +85,7 @@ uint8_t brightness = brightnessMap[brightnessIndex];
 // Current palette number from the 'playlist' of color palettes
 uint8_t gCurrentPaletteNumber = 7;
 
-CRGBPalette16 gCurrentPalette( CRGB::Cornflour);
+CRGBPalette16 gCurrentPalette( CRGB::Cornsilk);
 TBlendType    currentBlending;
 
 uint8_t currentPatternIndex = 0; // Index number of which pattern is current
@@ -121,6 +121,7 @@ BME680_Library bme680(0x76);
 IPAddress timeServerIP;
 WiFiClient wclient;
 PubSubClient client(wclient);
+IPAddress piserver(192, 168, 1, 76); // had to temporarily hard code as mdns not working
 
 const int NTP_PACKET_SIZE = 48;
 byte packetBuffer[NTP_PACKET_SIZE];
@@ -276,8 +277,15 @@ void updateDate(void)
     
 }
 char temperatureString[6];
-const unsigned long fiveMinutes = 5 * 60 * 1000UL;
-static unsigned long lastSampleTime = 0 - fiveMinutes; // initialize such that a reading is due the first time through loop()
+char humidityString[6];
+char pressureString[8];
+char gasString[8];
+
+
+//const unsigned long fiveMinutes = 5 * 60 * 1000UL;
+//static unsigned long lastSampleTime = 0 - fiveMinutes; // initialize such that a reading is due the first time through loop()
+long int lastSampleTime = now();
+long int lastDisplayTime = now();
 int buttonState = 0;
 
 // Display  assignments
@@ -465,7 +473,11 @@ void setup()
     Serial.println("mdns started");
     
 //WiFiClient wclient;
-    client.set_server(mqtt_server,1883);
+ //   client.set_server(mqtt_server,1883);
+    client.set_server(piserver,1883);
+
+    Serial.println("the server is");
+    Serial.println(mqtt_server);
 //PubSubClient client(wclient, mqtt_server);
 
     udp.begin(2390);
@@ -476,7 +488,10 @@ void setup()
 //define set name of your sign
 //String signname = "Room1"; //should be loaded from spiffs
 //define mqtt message names
-String thistemp = "ledclock\\" + String(sign_name);//signname;
+ thistemp = "ledclock\\" + String(sign_name);//signname;
+Serial.print ("the subscribe is ");
+Serial.println (thistemp);
+
  Wire.begin(mysda,myscl);
 
   Serial.print("BME Initialization...");
@@ -519,9 +534,9 @@ String thistemp = "ledclock\\" + String(sign_name);//signname;
 }
 
 
-/* Only needed if listening mqtt
+// Only needed if listening mqtt
 void callback(const MQTT::Publish& pub) {
-  // handle message arrived use strcmp on multiple subscriptions
+ /* // handle message arrived use strcmp on multiple subscriptions
    Serial.print(pub.topic());
   Serial.print(" => ");
   if (pub.has_stream()) {
@@ -554,16 +569,15 @@ if (strcmp(pub.topic().c_str(),messages.c_str())== 0){
     delay(100);
     sendtemp();
    }
- }
+ }*/
 }
-*/
+
 void reconnect() {
 
   // Loop until we're reconnected  - change to same as basic, try one
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
     if (client.connect(MQTT::Connect(botname)
-
       .set_auth("user", "secret")))  {
       Serial.println("connected");
     } else {
@@ -573,9 +587,10 @@ void reconnect() {
 }
 void sendtemp(){
   // Change this to send the temp etc from the 680 and also display it on the clock every so often coloured to temperatture
-   unsigned long now = millis();
+  // unsigned long now = millis();
   // function to send the temperature every five minutes rather than leavingb in the loop
-   if (now - lastSampleTime >= fiveMinutes)
+  // if (now - lastSampleTime >= fiveMinutes)
+    if (now() - lastSampleTime >= 60) //one minute
   {
     bme680.configureForcedMode(); // otherwise you get BME680_W_NO_NEW_DATA warning code?
   if(bme680.read()){
@@ -592,15 +607,26 @@ void sendtemp(){
     Serial.println("BME680 Read Failed!");
   }
      float temperature = bme680.getTemperature();
+     float humidity = bme680.getTemperature();
+     float pressure = bme680.getTemperature();
+     float gas = bme680.getTemperature();
   // convert temperature to a string with two digits before the comma and 2 digits for precision
   dtostrf(temperature, 2, 2, temperatureString);
+  dtostrf(humidity, 2, 2, humidityString);
+  dtostrf(pressure, 3, 2, pressureString);
+  dtostrf(gas, 6, 0, gasString);
   // send temperature to the serial console
-  Serial.println ("Sending temperature: ");
-  Serial.println (temperatureString);
+  //Serial.println ("Sending temperature: ");
+  //Serial.println (temperatureString);
+  //Serial.println (thistemp);
   // send temperature to the MQTT topic every 5 minutes
-     client.publish(thistemp, temperatureString);
+     client.publish(thistemp +"\\temperature", temperatureString);
+     client.publish(thistemp +"\\humidity", humidityString);
+     client.publish(thistemp +"\\pressure", pressureString);
+     client.publish(thistemp +"\\gas", gasString);
   //lastSampleTime = now + fiveMinutes;
-  lastSampleTime += fiveMinutes;
+  //lastSampleTime += fiveMinutes;
+  lastSampleTime = now();
    // add code to take scroll temperatre 4 times then reset face to static  (temperature is 5 characters * 8  for each scroll
   
     delay(100);
@@ -646,14 +672,14 @@ void settempleds( int b[], int sizeOfArray ){
    //Serial.println ();
    for (int k = 0 ; k <(sizeOfArray/4) ; ++k ){
    ld = b[k];
-   Serial.print (ld);
-   Serial.print ("-");
+   //Serial.print (ld);
+   //Serial.print ("-");
    // change this to scroll through pallets selected by button
    //leds[ld] = CRGB::Cornsilk;
    leds[ld] = ColorFromPalette( gCurrentPalette, currentPaletteIndex, brightness, currentBlending);
     currentPaletteIndex = random(0,255);
    }
-   Serial.println ();
+   //Serial.println ();
   //FastLED.clear();
  //set colour based on temp
 
@@ -799,56 +825,56 @@ void displaytime(void){
   if ((minute()>4) && (minute()<10)) { 
     settimeleds(MFIVE, sizeof(MFIVE));
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Five Minutes ");
+    //Serial.print("Five Minutes ");
   } 
   if ((minute()>9) && (minute()<15)) { 
     settimeleds(MTEN, sizeof(MTEN)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Ten Minutes ");
+    //Serial.print("Ten Minutes ");
   }
   if ((minute()>14) && (minute()<20)) {
     settimeleds(QUARTER, sizeof(QUARTER)); 
-    Serial.print("Quarter ");
+    //Serial.print("Quarter ");
   }
   if ((minute()>19) && (minute()<25)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Twenty Minutes ");
+   // Serial.print("Twenty Minutes ");
   }
   if ((minute()>24) && (minute()<30)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES));
-    Serial.print("Twenty Five Minutes ");
+    //Serial.print("Twenty Five Minutes ");
   }  
   if ((minute()>29) && (minute()<35)) {
     settimeleds(HALF, sizeof(HALF));
-    Serial.print("Half ");
+    //Serial.print("Half ");
   }
   if ((minute()>34) && (minute()<40)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES));
-    Serial.print("Twenty Five Minutes ");
+    //Serial.print("Twenty Five Minutes ");
   }  
   if ((minute()>39) && (minute()<45)) { 
     settimeleds(TWENTY, sizeof(TWENTY)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Twenty Minutes ");
+    //Serial.print("Twenty Minutes ");
   }
   if ((minute()>44) && (minute()<50)) {
     settimeleds(QUARTER, sizeof(QUARTER)); 
-    Serial.print("Quarter ");
+    //Serial.print("Quarter ");
   }
   if ((minute()>49) && (minute()<55)) { 
     settimeleds(MTEN, sizeof(MTEN)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Ten Minutes ");
+    //Serial.print("Ten Minutes ");
   } 
   if (minute()>54) { 
     settimeleds(MFIVE, sizeof(MFIVE)); 
     settimeleds(MINUTES, sizeof(MINUTES)); 
-    Serial.print("Five Minutes ");
+    //Serial.print("Five Minutes ");
   }
 
 
@@ -859,132 +885,132 @@ void displaytime(void){
     case 1:
     case 13: 
       settimeleds(ONE, sizeof(ONE)); 
-      Serial.print("One ");
+      //Serial.print("One ");
       break;
     case 2:
     case 14: 
       settimeleds(TWO, sizeof(TWO)); 
-      Serial.print("Two ");
+      //Serial.print("Two ");
       break;
     case 3: 
     case 15:
       settimeleds(THREE, sizeof(THREE)); 
-      Serial.print("Three ");
+     //Serial.print("Three ");
       break;
     case 4: 
     case 16:
       settimeleds(FOUR, sizeof(FOUR)); 
-      Serial.print("Four ");
+      //Serial.print("Four ");
       break;
     case 5: 
     case 17:
       settimeleds(FIVE, sizeof(FIVE)); 
-      Serial.print("Five ");
+      //Serial.print("Five ");
       break;
     case 6: 
     case 18:
       settimeleds(SIX, sizeof(SIX)); 
-      Serial.print("Six ");
+      //Serial.print("Six ");
       break;
     case 7: 
     case 19:
       settimeleds(SEVEN, sizeof(SEVEN)); 
-      Serial.print("Seven ");
+      //Serial.print("Seven ");
       break;
     case 8: 
     case 20:
       settimeleds(EIGHT, sizeof(EIGHT)); 
-      Serial.print("Eight ");
+      //Serial.print("Eight ");
       break;
     case 9: 
     case 21:
       settimeleds(NINE, sizeof(NINE)); 
-      Serial.print("Nine ");
+      //Serial.print("Nine ");
       break;
     case 10:
     case 22: 
       settimeleds(TEN, sizeof(TEN)); 
-      Serial.print("Ten ");
+      //Serial.print("Ten ");
       break;
     case 11:
     case 23: 
       settimeleds(ELEVEN, sizeof(ELEVEN)); 
-      Serial.print("Eleven ");
+      //Serial.print("Eleven ");
       break;
     case 0:
     case 12: 
       settimeleds(TWELVE, sizeof(TWELVE)); 
-      Serial.print("Twelve ");
+      //Serial.print("Twelve ");
       break;
     }
     settimeleds(OCLOCK, sizeof(OCLOCK));
-    Serial.println("O'Clock");
+    //Serial.println("O'Clock");
   }
   else
     if ((minute() < 35) && (minute() >4))
     {
       settimeleds(PAST, sizeof(PAST));
-      Serial.print("Past ");
+      //Serial.print("Past ");
       switch (hour()) {
       case 1:
       case 13: 
         settimeleds(ONE, sizeof(ONE)); 
-        Serial.println("One ");
+        //Serial.println("One ");
         break;
       case 2: 
       case 14:
         settimeleds(TWO, sizeof(TWO)); 
-        Serial.println("Two ");
+       // Serial.println("Two ");
         break;
       case 3: 
       case 15:
         settimeleds(THREE, sizeof(THREE)); 
-        Serial.println("Three ");
+        //Serial.println("Three ");
         break;
       case 4: 
       case 16:
         settimeleds(FOUR, sizeof(FOUR)); 
-        Serial.println("Four ");
+        //Serial.println("Four ");
         break;
       case 5: 
       case 17:
         settimeleds(FIVE, sizeof(FIVE)); 
-        Serial.println("Five ");
+        //Serial.println("Five ");
         break;
       case 6: 
       case 18:
         settimeleds(SIX, sizeof(SIX)); 
-        Serial.println("Six ");
+        //Serial.println("Six ");
         break;
       case 7: 
       case 19:
         settimeleds(SEVEN, sizeof(SEVEN)); 
-        Serial.println("Seven ");
+       // Serial.println("Seven ");
         break;
       case 8: 
       case 20:
         settimeleds(EIGHT, sizeof(EIGHT)); 
-        Serial.println("Eight ");
+        //Serial.println("Eight ");
         break;
       case 9: 
       case 21:
         settimeleds(NINE, sizeof(NINE)); 
-        Serial.println("Nine ");
+       // Serial.println("Nine ");
         break;
       case 10:
       case 22: 
         settimeleds(TEN, sizeof(TEN)); 
-        Serial.println("Ten ");
+        //Serial.println("Ten ");
         break;
       case 11:
       case 23: 
         settimeleds(ELEVEN, sizeof(ELEVEN)); 
-        Serial.println("Eleven ");
+        //Serial.println("Eleven ");
         break;
       case 0:
       case 12: 
         settimeleds(TWELVE, sizeof(TWELVE)); 
-        Serial.println("Twelve ");
+        //Serial.println("Twelve ");
         break;
       }
     }
@@ -993,67 +1019,67 @@ void displaytime(void){
       // if we are greater than 34 minutes past the hour then display
       // the next hour, as we will be displaying a 'to' sign
       settimeleds(TO, sizeof(TO));
-      Serial.print("To ");
+      //Serial.print("To ");
       switch (hour()) {
       case 1: 
       case 13:
         settimeleds(TWO, sizeof(TWO)); 
-        Serial.println("Two ");
+        //Serial.println("Two ");
         break;
       case 14:
       case 2: 
         settimeleds(THREE, sizeof(THREE)); 
-        Serial.println("Three ");
+        //Serial.println("Three ");
         break;
       case 15:
       case 3: 
         settimeleds(FOUR, sizeof(FOUR)); 
-        Serial.println("Four ");
+        //Serial.println("Four ");
         break;
       case 4: 
       case 16:
         settimeleds(FIVE, sizeof(FIVE)); 
-        Serial.println("Five ");
+        //Serial.println("Five ");
         break;
       case 5: 
       case 17:
         settimeleds(SIX, sizeof(SIX)); 
-        Serial.println("Six ");
+        //Serial.println("Six ");
         break;
       case 6: 
       case 18:
         settimeleds(SEVEN, sizeof(SEVEN)); 
-        Serial.println("Seven ");
+        //Serial.println("Seven ");
         break;
       case 7: 
       case 19:
         settimeleds(EIGHT, sizeof(EIGHT)); 
-        Serial.println("Eight ");
+        //Serial.println("Eight ");
         break;
       case 8: 
       case 20:
         settimeleds(NINE, sizeof(NINE)); 
-        Serial.println("Nine ");
+        //Serial.println("Nine ");
         break;
       case 9: 
       case 21:
         settimeleds(TEN, sizeof(TEN)); 
-        Serial.println("Ten ");
+        //Serial.println("Ten ");
         break;
       case 10: 
       case 22:
         settimeleds(ELEVEN, sizeof(ELEVEN)); 
-        Serial.println("Eleven ");
+        //Serial.println("Eleven ");
         break;
       case 11: 
       case 23:
         settimeleds(TWELVE, sizeof(TWELVE)); 
-        Serial.println("Twelve ");
+        //Serial.println("Twelve ");
         break;
       case 0:
       case 12: 
         settimeleds(ONE, sizeof(ONE)); 
-        Serial.println("One ");
+        //Serial.println("One ");
         break;
       }
     }
@@ -1061,12 +1087,12 @@ void displaytime(void){
 // Now set the AM or PM
  if (hour() >= 12 && hour() <= 23){
      settimeleds(AFTERNOON, sizeof(AFTERNOON));
-     Serial.println("afternoon");
+     //Serial.println("afternoon");
      //Serial.println(hour());
  } 
  else{
    settimeleds(MORNING, sizeof(MORNING));
-   Serial.println("morning");
+   //Serial.println("morning");
  }
 
 // Now show the time
@@ -1099,8 +1125,8 @@ void loop(void)
   //Serial.println("Loop Started");
   
   
-  Serial.print(second());
-   Serial.print("..");
+  //Serial.print(second());
+  // Serial.print("..");
   
 // Change Pallet Colour if needed/ wanted
   if (digitalRead(palletchange) == LOW) {
@@ -1117,13 +1143,16 @@ void loop(void)
     if( gCurrentPaletteNumber == 5)  { gCurrentPalette = LavaColors_p;           currentBlending = LINEARBLEND; } 
     if( gCurrentPaletteNumber == 6)  { gCurrentPalette = OceanColors_p;           currentBlending = LINEARBLEND; }  
     if( gCurrentPaletteNumber == 7)  { gCurrentPalette = CRGBPalette16(CRGB::Cornsilk);           currentBlending = NOBLEND; } 
-    delay(500); //debounce
+    displaytime();
+    delay(2000); //debounce
     }
 // Add Glitter
 
 // Show Time and reset as needed
+ if (now() - lastDisplayTime >= 30){ //update time every 30 seconds 
     displaytime();
-
+    lastDisplayTime = now();
+ }
    if ((hour()==23) && (minute()==1)) {
     updateDate(); // actual need to call this only once per day not every minute 23:01
    }
