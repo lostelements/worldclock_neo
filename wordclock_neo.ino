@@ -32,7 +32,7 @@ FASTLED_USING_NAMESPACE
 #include <TimeLib.h> //https://github.com/PaulStoffregen/Time
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
-#include <BME680_Library.h>
+#include <BME680_Library.h> //https://github.com/vicatcu/BME680_Breakout
 #include <Wire.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
@@ -590,7 +590,7 @@ void sendtemp(){
   // unsigned long now = millis();
   // function to send the temperature every five minutes rather than leavingb in the loop
   // if (now - lastSampleTime >= fiveMinutes)
-    if (now() - lastSampleTime >= 60) //one minute
+    if (now() - lastSampleTime >= 300) //five minute
   {
     bme680.configureForcedMode(); // otherwise you get BME680_W_NO_NEW_DATA warning code?
   if(bme680.read()){
@@ -607,9 +607,9 @@ void sendtemp(){
     Serial.println("BME680 Read Failed!");
   }
      float temperature = bme680.getTemperature();
-     float humidity = bme680.getTemperature();
-     float pressure = bme680.getTemperature();
-     float gas = bme680.getTemperature();
+     float humidity = bme680.getRelativeHumidity();
+     float pressure = bme680.getBarometricPressure();
+     float gas = bme680.getGasResistance();
   // convert temperature to a string with two digits before the comma and 2 digits for precision
   dtostrf(temperature, 2, 2, temperatureString);
   dtostrf(humidity, 2, 2, humidityString);
